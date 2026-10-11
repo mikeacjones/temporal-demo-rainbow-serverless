@@ -9,6 +9,82 @@ Code to read: [`internal/orders/workflow_v1.go`](internal/orders/workflow_v1.go)
 Lambda image), then [`cmd/worker`](cmd/worker) / [`cmd/lambdaworker`](cmd/lambdaworker).
 Design notes: [`DESIGN.md`](DESIGN.md).
 
+[![Presenter walkthrough](docs/walkthrough.gif)](docs/walkthrough.mp4)
+
+A narrated pass through Deploy, then Scale. The GIF is the inline view; the [MP4](docs/walkthrough.mp4) has the voiceover. Script: [`docs/walkthrough.yaml`](docs/walkthrough.yaml).
+
+## How it works
+
+```mermaid
+%%{init: {"theme": "base", "flowchart": {"nodeSpacing": 40, "rankSpacing": 60, "padding": 18}, "themeVariables": {
+  "fontSize": "15px",
+  "primaryColor": "#141414",
+  "primaryTextColor": "#f8fafc",
+  "primaryBorderColor": "#444ce7",
+  "lineColor": "#1ff1a5",
+  "textColor": "#f8fafc",
+  "clusterBkg": "#1a1830",
+  "clusterBorder": "#465a78",
+  "titleColor": "#cacbf9",
+  "edgeLabelBackground": "#141414"
+}}}%%
+flowchart TB
+  subgraph card[" "]
+    direction TB
+    subgraph deploy["DEPLOY"]
+      direction TB
+      start["Start deployment"]
+      gate["Canary orders<br/>pinned to the candidate"]
+      ramp["Share of new orders"]
+      stay["In-flight orders<br/>stay on their version"]
+      start -- "1" --> gate
+      gate -- "2 pass" --> ramp
+      ramp -- "3" --> stay
+    end
+    subgraph cloud["TEMPORAL CLOUD"]
+      direction TB
+      queue["Task on that<br/>version's queue"]
+      watch["Monitors the backlog<br/>starts invocations"]
+      queue -- "5" --> watch
+    end
+    subgraph aws["AWS LAMBDA"]
+      direction TB
+      arn["Qualified ARN<br/>for that version"]
+      run["Invocation polls<br/>and runs the tasks"]
+      idle["Queue quiet<br/>invocation exits"]
+      arn -- "7" --> run
+      run -- "8" --> idle
+    end
+    deploy -- "4" --> cloud
+    cloud -- "6 invoke" --> aws
+  end
+
+  classDef temporal fill:#141414,stroke:#444ce7,stroke-width:2px,color:#f8fafc
+  classDef controller fill:#141414,stroke:#b664ff,stroke-width:2px,color:#f8fafc
+  classDef keda fill:#141414,stroke:#1ff1a5,stroke-width:2px,color:#f8fafc
+  classDef resource fill:#141414,stroke:#7f86f1,stroke-width:1px,stroke-dasharray:4 3,color:#cacbf9
+  classDef pods fill:#141414,stroke:#4fd8ff,stroke-width:2px,color:#f8fafc
+  class queue temporal
+  class watch controller
+  class start,ramp controller
+  class gate,stay,run pods
+  class arn resource
+  class idle keda
+  classDef card fill:#141414,stroke:#141414,color:#141414
+  class card card
+```
+
+1. **Start deployment** on a version that is already registered. v1 through v5 are registered before the demo starts, so a rollout changes routing rather than shipping an image.
+2. The gate runs a few real orders **pinned to the candidate**. A bad build fails here, before any of the current share moves.
+3. After the gate passes, only the **share of new orders** ramps. Each stage holds, and you can advance it, hold it, set a share by hand, or abort it. An order **stays on the version that started it**.
+4. Each of those orders becomes a **task on one version's queue**. A rate or a burst does the same thing. v1 through v5 each have their own queue and their own Lambda, so Cloud only starts invocations for a version that has work waiting.
+5. Cloud **monitors that version's backlog**. When the queue needs more capacity, that machinery starts new Lambda invocations.
+6. Each invocation is an **InvokeFunction** call on the qualified ARN registered for that version. A larger backlog starts more of them.
+7. The invocation connects, **polls that version's queue**, and can run many tasks before it stops. An order pinned to v2 is still executed by v2's Lambda after the ramp has moved on.
+8. When the queue is quiet, Cloud **stops calling**. The invocation exits after it finishes the tasks it has, or as it nears its time limit. Nothing replaces it, so that version scales to zero. The dashboard stays up.
+
+`make up` does not run this loop. Locally each version is a process that is already polling. The invoke path is Temporal Cloud.
+
 ## Quick start
 
 ```bash
