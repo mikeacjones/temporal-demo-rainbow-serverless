@@ -4,10 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Order ops — rainbow deploys</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="presenter.css">
 </head>
 <body>
 
@@ -15,12 +13,41 @@
   <div class="brand">
     <span class="brand-mark" aria-hidden="true"></span>
     <span>
-      <span class="brand-name">Order ops</span>
-      <span class="tag brand-sub">rainbow deploys</span>
+      <span class="brand-name">Rainbow deploys</span>
+      <span class="brand-sub">Safe change. Elastic workers.</span>
     </span>
   </div>
 
-  <div class="readouts">
+  <nav class="scene-switcher" aria-label="Demo story">
+    <button class="scene-tab" type="button" data-scene="deploy" aria-pressed="true">
+      <span>Deploy</span>
+      <small>Change safely</small>
+    </button>
+    <button class="scene-tab" type="button" data-scene="scale" aria-pressed="false">
+      <span>Scale</span>
+      <small>Respond to demand</small>
+    </button>
+  </nav>
+
+  <div class="shared-state" title="Everyone using this authenticated demo sees and controls the same environment.">
+    <span class="shared-state-icon" aria-hidden="true"></span>
+    Shared live environment
+  </div>
+
+  <div class="counters">
+    <button class="chip" id="counters-reset" type="button"
+            title="Count only orders started from now on. Nothing is deleted.">Reset counters</button>
+    <span class="tag" id="counters-since"></span>
+  </div>
+
+  <div class="link-status">
+    <span class="link-dot" id="link-dot"></span>
+    <span class="tag" id="link-text">connecting</span>
+  </div>
+</header>
+
+<div class="app-shell">
+  <section class="readouts" aria-label="Live order summary">
     <div class="readout">
       <span class="readout-value" id="rate-actual">—</span>
       <span class="readout-unit">orders/min in</span>
@@ -45,191 +72,220 @@
       <span class="readout-value" id="stuck">—</span>
       <span class="readout-unit">stuck</span>
     </div>
-  </div>
+  </section>
 
-  <div class="counters">
-    <button class="chip" id="counters-reset" type="button"
-            title="Count only orders started from now on. Nothing is deleted.">Reset counters</button>
-    <span class="tag" id="counters-since"></span>
-  </div>
-
-  <div class="link-status">
-    <span class="link-dot" id="link-dot"></span>
-    <span class="tag" id="link-text">connecting</span>
-  </div>
-</header>
-
-<!-- The hero: where orders are sent, where they are, and where the workers are. -->
-<section class="spectrum" aria-labelledby="spectrum-heading">
-  <div class="panel panel-chamfer">
-    <div class="spectrum-head">
-      <h2 class="panel-title" id="spectrum-heading">Order routing</h2>
-      <div class="shift" id="shift" hidden>
-        <span id="shift-from">—</span>
-        <span class="shift-arrow" aria-hidden="true">&#10142;</span>
-        <span id="shift-to">—</span>
-      </div>
-      <div class="spectrum-controls" id="spectrum-controls"></div>
-    </div>
-
-    <div class="spectrum-rows">
-      <div class="spectrum-row">
-        <div class="spectrum-label">
-          <span class="tag">new orders</span>
+  <main class="presenter">
+    <section class="scene scene-deploy" data-scene-panel="deploy" aria-labelledby="deploy-title">
+      <div class="scene-intro">
+        <div>
+          <h1 id="deploy-title">Change the code.<br>Keep every promise.</h1>
+          <p>New orders move to the new version. Orders already in progress finish on the code that started them.</p>
         </div>
-        <div class="bar" id="split-routing" role="img" aria-label="Share of new orders by version"></div>
-      </div>
-
-      <div class="spectrum-row">
-        <div class="spectrum-label">
-          <span class="tag">in flight</span>
+        <div class="watch-note">
+          <strong>Watch the two bands.</strong>
+          <span>Routing changes first. In-flight work drains without changing versions.</span>
         </div>
-        <div class="bar bar-slim" id="split-inflight" role="img" aria-label="Share of in-flight orders by version"></div>
       </div>
 
-    </div>
+      <section class="spectrum" aria-labelledby="spectrum-heading">
+        <div class="panel panel-chamfer">
+          <div class="spectrum-head">
+            <h2 class="panel-title" id="spectrum-heading">Live routing</h2>
+            <div class="shift" id="shift" hidden>
+              <span id="shift-from">—</span>
+              <span class="shift-arrow" aria-hidden="true">&#10142;</span>
+              <span id="shift-to">—</span>
+            </div>
+            <div class="spectrum-controls" id="spectrum-controls"></div>
+          </div>
 
-    <p class="spectrum-legend" id="spectrum-legend"></p>
+          <div class="spectrum-rows">
+            <div class="spectrum-row">
+              <div class="spectrum-label">
+                <span class="tag">New orders go to</span>
+              </div>
+              <div class="bar" id="split-routing" role="img" aria-label="Share of new orders by version"></div>
+            </div>
 
-    <div class="rollout" id="rollout-body"></div>
-  </div>
-</section>
+            <div class="spectrum-row">
+              <div class="spectrum-label">
+                <span class="tag">Orders still running</span>
+              </div>
+              <div class="bar bar-slim" id="split-inflight" role="img" aria-label="Share of in-flight orders by version"></div>
+            </div>
+          </div>
 
-<main class="grid">
+          <p class="spectrum-legend" id="spectrum-legend"></p>
+          <div class="rollout" id="rollout-body"></div>
+        </div>
+      </section>
 
-  <!-- Traffic shaping -->
-  <section class="panel" aria-labelledby="flow-heading">
-    <div class="panel-head">
-      <h2 class="panel-title" id="flow-heading">Order flow</h2>
-    </div>
+      <section class="roster" aria-labelledby="roster-heading">
+        <div class="roster-head">
+          <div>
+            <h2 class="panel-title" id="roster-heading">Choose the next version</h2>
+            <p>Every version is registered and ready. Start a guarded deployment or send an isolated burst directly.</p>
+          </div>
+          <span class="tag" id="roster-count"></span>
+        </div>
+        <div class="stations" id="stations"></div>
+      </section>
+    </section>
 
-    <div class="flow-rate">
-      <label class="field">
-        <span class="tag">steady rate</span>
-        <span class="flow-input">
-          <input type="number" id="rate-input" min="0" max="20000" step="10" value="0" aria-label="Orders per minute">
-          <span class="flow-suffix">/min</span>
-        </span>
-      </label>
-      <button class="btn btn-primary" id="rate-apply">Set rate</button>
-    </div>
-
-    <div class="chips" role="group" aria-label="Rate presets">
-      <button class="chip" data-rate="0">Halt</button>
-      <button class="chip" data-rate="120">120</button>
-      <button class="chip" data-rate="600">600</button>
-      <button class="chip" data-rate="1000">1,000</button>
-      <button class="chip" data-rate="2500">2,500</button>
-    </div>
-
-    <div class="burst">
-      <span class="tag">burst trigger</span>
-      <div class="chips" role="group" aria-label="Burst size" style="margin-top:8px">
-        <button class="chip chip-burst" data-spike="500">500</button>
-        <button class="chip chip-burst" data-spike="1000">1,000</button>
-        <button class="chip chip-burst" data-spike="5000">5,000</button>
+    <section class="scene scene-scale" data-scene-panel="scale" aria-labelledby="scale-title" hidden>
+      <div class="scene-intro">
+        <div>
+          <h1 id="scale-title">Send the surge.<br>Temporal finds capacity.</h1>
+          <p>Work waits durably when demand outruns workers. Lambda capacity appears, catches up, and recedes.</p>
+        </div>
+        <div class="watch-note">
+          <strong>Watch queue and workers together.</strong>
+          <span>A growing queue is demand waiting safely—not lost work.</span>
+        </div>
       </div>
-    </div>
 
-    <p class="autostop" id="autostop" hidden></p>
-  </section>
+      <div class="scale-layout">
+        <section class="panel flow-panel" aria-labelledby="flow-heading">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title" id="flow-heading">Create demand</h2>
+              <p>Set a steady flow, then add a burst on top.</p>
+            </div>
+          </div>
 
-  <!-- Capacity -->
-  <section class="panel" aria-labelledby="fleet-heading">
-    <div class="panel-head">
-      <h2 class="panel-title" id="fleet-heading">Worker fleet</h2>
-      <span class="tag" id="fleet-region">serverless</span>
-    </div>
+          <div class="flow-rate">
+            <label class="field">
+              <span class="tag">Orders per minute</span>
+              <span class="flow-input">
+                <input type="number" id="rate-input" min="0" max="20000" step="10" value="0" aria-label="Orders per minute">
+                <span class="flow-suffix">/min</span>
+              </span>
+            </label>
+            <button class="btn btn-primary" id="rate-apply">Set flow</button>
+          </div>
 
-    <div class="gauges">
-      <div class="gauge">
-        <span class="gauge-value" id="workers">—</span>
-        <span class="gauge-name" id="workers-name">workers running</span>
-        <svg class="spark" id="spark-workers" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="chips" role="group" aria-label="Rate presets">
+            <button class="chip" data-rate="0">Stop</button>
+            <button class="chip" data-rate="120">120</button>
+            <button class="chip" data-rate="600">600</button>
+            <button class="chip" data-rate="1000">1,000</button>
+            <button class="chip" data-rate="2500">2,500</button>
+          </div>
+
+          <div class="burst">
+            <span class="tag">Add a burst</span>
+            <div class="chips" role="group" aria-label="Burst size">
+              <button class="chip chip-burst" data-spike="500">+500</button>
+              <button class="chip chip-burst" data-spike="1000">+1,000</button>
+              <button class="chip chip-burst" data-spike="5000">+5,000</button>
+            </div>
+          </div>
+
+          <p class="autostop" id="autostop" hidden></p>
+        </section>
+
+        <section class="panel fleet-panel" aria-labelledby="fleet-heading">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title" id="fleet-heading">Capacity response</h2>
+              <p>Demand can wait. Workers arrive when they are needed.</p>
+            </div>
+            <span class="tag" id="fleet-region">Temporal Cloud + Lambda</span>
+          </div>
+
+          <div class="gauges">
+            <div class="gauge gauge-hero">
+              <span class="gauge-value" id="workers">—</span>
+              <span class="gauge-name" id="workers-name">workers running</span>
+              <svg class="spark" id="spark-workers" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
+            <div class="gauge gauge-hero">
+              <span class="gauge-value" id="backlog">—</span>
+              <span class="gauge-name" id="backlog-name">backlog task queue</span>
+              <svg class="spark" id="spark-backlog" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
+            <div class="gauge">
+              <span class="gauge-value" id="syncmatch">—</span>
+              <span class="gauge-name" id="syncmatch-name">handed straight over</span>
+            </div>
+            <div class="gauge">
+              <span class="gauge-value" id="oldest-wait">—</span>
+              <span class="gauge-name">longest wait</span>
+            </div>
+          </div>
+        </section>
       </div>
-      <div class="gauge">
-        <span class="gauge-value" id="backlog">—</span>
-        <span class="gauge-name" id="backlog-name">backlog task queue</span>
-        <svg class="spark" id="spark-backlog" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"></svg>
-      </div>
-      <div class="gauge">
-        <span class="gauge-value" id="syncmatch">—</span>
-        <span class="gauge-name" id="syncmatch-name">handed straight over</span>
-      </div>
-      <div class="gauge">
-        <span class="gauge-value" id="oldest-wait">—</span>
-        <span class="gauge-name">longest wait</span>
-      </div>
-    </div>
+    </section>
+  </main>
 
-  </section>
+  <details class="backstage">
+    <summary>
+      <span>Open backstage</span>
+      <small>Fault injection and individual orders</small>
+    </summary>
 
-  <!-- Fault injection -->
-  <section class="panel" aria-labelledby="fault-heading">
-    <div class="panel-head">
-      <h2 class="panel-title" id="fault-heading">Break a version</h2>
-    </div>
+    <section class="backstage-grid">
+      <section class="panel" aria-labelledby="fault-heading">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title" id="fault-heading">Inject a failure</h2>
+            <p>Make one pipeline retry, then recover its orders.</p>
+          </div>
+        </div>
 
-    <div class="fault-grid">
-      <label class="field">
-        <span class="tag">version</span>
-        <select id="fault-version"></select>
-      </label>
-      <label class="field">
-        <span class="tag">step</span>
-        <select id="fault-step"></select>
-      </label>
-      <label class="field">
-        <span class="tag">how</span>
-        <select id="fault-mode">
-          <option value="fail">Fails and retries</option>
-          <option value="slow">Runs very slowly</option>
-        </select>
-      </label>
-      <label class="field">
-        <span class="tag">blast radius</span>
-        <span class="flow-input">
-          <input type="number" id="fault-pct" min="0" max="100" step="5" value="100" aria-label="Percentage of orders affected">
-          <span class="flow-suffix">%</span>
-        </span>
-      </label>
-    </div>
+        <div class="fault-grid">
+          <label class="field">
+            <span class="tag">Version</span>
+            <select id="fault-version"></select>
+          </label>
+          <label class="field">
+            <span class="tag">Step</span>
+            <select id="fault-step"></select>
+          </label>
+          <label class="field">
+            <span class="tag">Behavior</span>
+            <select id="fault-mode">
+              <option value="fail">Fail and retry</option>
+              <option value="slow">Run very slowly</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="tag">Orders affected</span>
+            <span class="flow-input">
+              <input type="number" id="fault-pct" min="0" max="100" step="5" value="100" aria-label="Percentage of orders affected">
+              <span class="flow-suffix">%</span>
+            </span>
+          </label>
+        </div>
 
-    <div class="fault-actions">
-      <button class="btn btn-danger" id="fault-apply">Trigger fault</button>
-      <button class="btn" id="fault-clear">Clear</button>
-    </div>
+        <div class="fault-actions">
+          <button class="btn btn-danger" id="fault-apply">Trigger failure</button>
+          <button class="btn" id="fault-clear">Clear failure</button>
+        </div>
 
-    <p class="fault-active" id="fault-active" hidden></p>
-  </section>
+        <p class="fault-active" id="fault-active" hidden></p>
+      </section>
 
-</main>
-
-<!-- Version roster -->
-<section class="roster" aria-labelledby="roster-heading">
-  <div class="roster-head">
-    <h2 class="panel-title" id="roster-heading">Versions &amp; pipelines</h2>
-    <span class="tag" id="roster-count"></span>
-  </div>
-  <div class="stations" id="stations"></div>
-</section>
-
-<!-- Live orders -->
-<section class="rail-section" aria-labelledby="rail-heading">
-  <div class="rail-head">
-    <h2 class="panel-title" id="rail-heading">Orders in flight</h2>
-    <span class="rail-count" id="tickets-count"></span>
-    <div class="rail-filters" id="rail-filters" role="group" aria-label="Filter orders">
-      <button class="chip" data-filter="all" aria-pressed="true">All</button>
-      <button class="chip" data-filter="fast">&lt; 30s</button>
-      <button class="chip" data-filter="mid">30s&ndash;1m</button>
-      <button class="chip" data-filter="slow">&gt; 1m</button>
-      <button class="chip" data-filter="stuck">Stuck</button>
-    </div>
-  </div>
-  <div class="order-columns" id="order-columns"></div>
-  <p class="rail-foot" id="rail-foot"></p>
-</section>
+      <section class="rail-section" aria-labelledby="rail-heading">
+        <div class="rail-head">
+          <div>
+            <h2 class="panel-title" id="rail-heading">Individual orders</h2>
+            <span class="rail-count" id="tickets-count"></span>
+          </div>
+          <div class="rail-filters" id="rail-filters" role="group" aria-label="Filter orders">
+            <button class="chip" data-filter="all" aria-pressed="true">All</button>
+            <button class="chip" data-filter="fast">&lt; 30s</button>
+            <button class="chip" data-filter="mid">30s–1m</button>
+            <button class="chip" data-filter="slow">&gt; 1m</button>
+            <button class="chip" data-filter="stuck">Stuck</button>
+          </div>
+        </div>
+        <div class="order-columns" id="order-columns"></div>
+        <p class="rail-foot" id="rail-foot"></p>
+      </section>
+    </section>
+  </details>
+</div>
 
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 

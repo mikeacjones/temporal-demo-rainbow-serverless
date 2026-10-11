@@ -329,26 +329,25 @@ orders/min. Here, the order Workflow upserts search attributes
 - the **live order strip** is a *sampled* `ListWorkflowExecutions`
   page (most recent ~40), not every open order.
 
-Panels (as rebuilt on the `ui-redesign` branch):
+The presenter dashboard separates two equal stories instead of showing every
+control at once:
 
-1. **Top strip** — orders/min in, served/min, in flight, queued, median
-   order time, and stuck (which appears only when something is stuck).
-2. **Order routing** — the hero. Three segmented bars: where new orders
-   are sent, where orders actually are, and where the workers actually
-   are. The gap between the first two is the pinning guarantee; the third
-   is empty at rest and fills per version as work arrives. A live
-   deployment's controls sit in this panel's header, beside the bars they
-   move, with its stage rail, health readout and canary result below.
-3. **Order flow** — steady rate with presets, and burst triggers.
-4. **Worker fleet** — workers running, sync match rate, backlog task
-   queue, longest wait, and a peak-worker sparkline.
-5. **Break a version** — target version, step, mode and blast radius.
-6. **Versions & pipelines** — a card per version: routing role, share of
-   new orders, its own live worker count, in-flight and served counts,
-   its pipeline as a ladder, and buttons to start a deployment, send
-   orders straight to it, or rescue orders stranded on it.
-7. **On the rail** — sampled live orders, **oldest first**, each drawing
-   its journey as one dot per step of *its* version's pipeline.
+1. **Deploy** — the routing spectrum is the hero. Two segmented bands show
+   where new orders go and where in-flight orders remain. Their temporary
+   disagreement is the pinning guarantee. The rollout stage rail, canary
+   result, and controls stay beside the bands they affect. A version roster
+   below starts guarded deployments or sends an isolated burst to one version.
+2. **Scale** — demand controls sit beside the capacity response. Workers,
+   queued tasks, sync match, longest wait, and their short histories explain
+   how serverless capacity reacts to a surge.
+3. **Backstage** — fault injection and individual order journeys are available
+   on demand. They are supporting proof, not permanent competition for the
+   presenter’s attention.
+
+The top strip remains visible in both scenes: orders/min in, served/min,
+in flight, queued, median order time, and stuck (only when non-zero). Scene
+keys `1` and `2` let a presenter move between the two stories without hunting
+for a control.
 
 Recovery is a **server-side batch**: one `StartBatchOperation` with a
 `BatchOperationReset` whose `PostResetOperations` pin each new run to the

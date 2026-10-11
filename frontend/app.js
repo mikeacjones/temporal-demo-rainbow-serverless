@@ -30,6 +30,36 @@ const $ = (id) => document.getElementById(id);
 let snapshot = null;
 let railFilter = 'all';
 
+/* --- Presenter scenes ---------------------------------------------------- */
+
+// Deploy and Scale are two chapters of the same live system. Keeping them
+// separate gives each story one obvious visual focus without hiding any state:
+// switching scenes changes presentation only.
+function showScene(name) {
+  const selected = name === 'scale' ? 'scale' : 'deploy';
+
+  for (const tab of document.querySelectorAll('[data-scene]')) {
+    tab.setAttribute('aria-pressed', String(tab.dataset.scene === selected));
+  }
+  for (const panel of document.querySelectorAll('[data-scene-panel]')) {
+    panel.hidden = panel.dataset.scenePanel !== selected;
+  }
+  document.body.dataset.scene = selected;
+}
+
+for (const tab of document.querySelectorAll('[data-scene]')) {
+  tab.addEventListener('click', () => showScene(tab.dataset.scene));
+}
+
+window.addEventListener('keydown', (event) => {
+  const target = event.target;
+  if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+  if (event.key === '1') showScene('deploy');
+  if (event.key === '2') showScene('scale');
+});
+
+showScene(new URLSearchParams(location.search).get('scene'));
+
 /* --- Formatting --------------------------------------------------------- */
 
 const int = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
@@ -787,6 +817,7 @@ function dumpControl(label) {
 
   const count = el('input', { type: 'number', min: '1', max: '20000', step: '50', class: 'dump-count' });
   count.value = 250;
+  count.name = `orders-for-${label}`;
   count.setAttribute('aria-label', `Orders to send straight to ${label}`);
 
   const send = button(`Send to ${label}`, '', () =>

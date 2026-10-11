@@ -7,7 +7,7 @@
 # under /tmp, so it needs no CHOWN capability and no writable /var mounts.
 FROM nginxinc/nginx-unprivileged:1.29-alpine
 
-COPY frontend/index.html frontend/app.css frontend/app.js /usr/share/nginx/html/
+COPY frontend/index.html frontend/app.css frontend/presenter.css frontend/app.js /usr/share/nginx/html/
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080

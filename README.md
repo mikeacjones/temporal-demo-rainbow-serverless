@@ -39,7 +39,16 @@ make clear-version V=v4
 make rescue V=v4
 ```
 
-Or use the dashboard: set rate → spike → start deployment → break a version → rescue.
+Or use the presenter dashboard:
+
+- **Deploy** (`1`) — start a guarded rollout and watch new routing move while
+  in-flight orders remain pinned to their original version.
+- **Scale** (`2`) — set a steady rate, add a burst, and watch queued work and
+  Lambda workers respond together.
+- **Open backstage** — inject a failure and inspect individual order progress.
+
+The hosted dashboard is intentionally shared: every authenticated viewer sees
+the same traffic and deployment state.
 
 ## Local iteration
 
