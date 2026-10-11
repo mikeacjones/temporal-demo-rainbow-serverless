@@ -3,86 +3,71 @@ package orders
 import (
 	"fmt"
 
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
 
-// Registry is the part of a worker this package needs in order to register
-// itself.
-//
-// Declared here, as narrowly as possible, rather than taking worker.Registry:
-// a Lambda serverless worker exposes these same methods but is not a full
-// worker.Registry, and both kinds of worker should be able to host the order
-// pipeline without either one shaping the other.
+// Registry is the registration surface shared by process workers and
+// lambdaworker (which is not a full worker.Registry).
 type Registry interface {
 	RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions)
-	RegisterActivityWithOptions(a any, options activity.RegisterOptions)
+	RegisterActivity(a any)
 }
 
-// Register wires one version's order pipeline onto a worker.
+// Register wires this worker's code bundle as Pinned CustomerOrder / OrderGate.
 //
-// A worker process serves exactly one version. Both Workflow types are
-// registered as Pinned, which is the guarantee the whole demo rests on: an
-// order that starts on this worker's version runs to completion on this
-// version's code, no matter what a rollout does to the routing config
-// underneath it.
+// ORDER_VERSION selects which bundle (workflow_vN.go). The client starts
+// WorkflowTypeName with no version argument — Worker Deployment routes to this
+// Build ID. In production each Build ID is a separate upload; here five bundles
+// live in one repo so the demo can run them side by side.
 func Register(w Registry, v Version, profile Profile) {
-	w.RegisterWorkflowWithOptions(
-		func(ctx workflow.Context, in OrderInput) (OrderResult, error) {
-			return Order(ctx, v, in)
-		},
-		workflow.RegisterOptions{
-			Name:               WorkflowTypeName,
-			VersioningBehavior: workflow.VersioningBehaviorPinned,
-		},
-	)
+	order, gate := bundleFor(v)
 
-	w.RegisterWorkflowWithOptions(
-		func(ctx workflow.Context, in OrderInput) (OrderResult, error) {
-			return Gate(ctx, v, in)
-		},
-		workflow.RegisterOptions{
-			Name:               GateWorkflowTypeName,
-			VersioningBehavior: workflow.VersioningBehaviorPinned,
-		},
-	)
+	w.RegisterWorkflowWithOptions(order, workflow.RegisterOptions{
+		Name:               WorkflowTypeName,
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+	w.RegisterWorkflowWithOptions(gate, workflow.RegisterOptions{
+		Name:               GateWorkflowTypeName,
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
 
-	// One Activity type per step, and only the steps this version actually
-	// runs. That is what makes the versions genuinely different to look at:
-	// a v1 worker registers four Activity types, a v4 worker registers seven,
-	// and an order's Event History names the work it did — ChargePayment,
-	// ScreenForFraud — instead of five identical PerformStep entries.
-	//
-	// They share one implementation because a step's *behaviour* is not what
-	// differs between versions; its presence and position are. Sharing the
-	// body while splitting the type keeps the pipelines honest on screen
-	// without pretending eight steps need eight different bodies.
 	activities := &Activities{Profile: profile}
-	for _, step := range StepsFor(v) {
-		w.RegisterActivityWithOptions(
-			activities.PerformStep,
-			activity.RegisterOptions{Name: step.ActivityName()},
-		)
+	for _, fn := range activitiesFor(activities, v) {
+		w.RegisterActivity(fn)
 	}
 }
 
-// Menu is what a customer can order. Purely cosmetic: it gives the dashboard
-// something recognisable to show on each order card.
-var Menu = []Item{
-	{Name: "Double Double", Qty: 1},
-	{Name: "Large Dark Roast", Qty: 1},
-	{Name: "Boston Cream", Qty: 2},
-	{Name: "Honey Dip", Qty: 1},
-	{Name: "Ice Capp", Qty: 1},
-	{Name: "Bagel B.E.L.T.", Qty: 1},
-	{Name: "Timbits 10-pack", Qty: 1},
-	{Name: "Steeped Tea", Qty: 2},
-	{Name: "Breakfast Wrap", Qty: 1},
-	{Name: "Chili + Bun", Qty: 1},
+func bundleFor(v Version) (order, gate any) {
+	switch v {
+	case V1:
+		return OrderV1, GateV1
+	case V2:
+		return OrderV2, GateV2
+	case V3:
+		return OrderV3, GateV3
+	case V4:
+		return OrderV4, GateV4
+	case V5:
+		return OrderV5, GateV5
+	default:
+		return OrderV1, GateV1
+	}
 }
 
-// Stores gives orders a plausible origin, so traffic looks like it comes from
-// a fleet of locations rather than one firehose.
+// Menu / Stores are cosmetic labels for the dashboard.
+var Menu = []Item{
+	{Name: "House Blend", Qty: 1},
+	{Name: "Large Dark Roast", Qty: 1},
+	{Name: "Chocolate Donut", Qty: 2},
+	{Name: "Honey Glazed", Qty: 1},
+	{Name: "Iced Latte", Qty: 1},
+	{Name: "Breakfast Sandwich", Qty: 1},
+	{Name: "Donut Holes 10-pack", Qty: 1},
+	{Name: "Herbal Tea", Qty: 2},
+	{Name: "Breakfast Wrap", Qty: 1},
+	{Name: "Soup + Bread", Qty: 1},
+}
+
 var Stores = []string{
 	"Toronto — Front St",
 	"Toronto — Yonge & Eg",
@@ -94,8 +79,6 @@ var Stores = []string{
 	"Montreal — Sainte-Catherine",
 }
 
-// NewOrderInput builds order number seq, varying items and store by sequence so
-// the mix is deterministic and easy to reason about.
 func NewOrderInput(seq int, chaos *ChaosSpec) OrderInput {
 	first := Menu[seq%len(Menu)]
 	second := Menu[(seq*7+3)%len(Menu)]

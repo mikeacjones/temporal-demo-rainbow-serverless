@@ -10,36 +10,16 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-// Profile controls how long a whole order takes.
-//
-// It is expressed as an end-to-end budget rather than a per-step duration, so
-// that every version's order takes about the same time however many steps its
-// pipeline has. That keeps the versions comparable on screen: a rollout should
-// look like a change in an order's *shape*, not a change in how long customers
-// wait.
-//
-// Throughput and worker occupancy pull against each other — 1,000 orders a
-// minute at 8 seconds of work each needs about 130 concurrent activity slots —
-// so the budget is a deployment choice.
+// Profile is an end-to-end work budget shared across a version's steps so every
+// pipeline takes about the same wall time (shape changes, not latency).
 type Profile string
 
-// The three speed profiles.
 const (
-	// ProfileFast keeps orders around a second, so a laptop with a handful of
-	// worker processes can still sustain a high order rate.
-	ProfileFast Profile = "fast"
-
-	// ProfileDemo is the presentation setting: quick enough that an order
-	// completes while you are talking about it, slow enough that a spike
-	// still builds a visible queue.
-	ProfileDemo Profile = "demo"
-
-	// ProfileHeavy saturates workers deliberately, to force queueing.
-	ProfileHeavy Profile = "heavy"
+	ProfileFast  Profile = "fast"  // ~1s — high rate on a laptop
+	ProfileDemo  Profile = "demo"  // ~8s — presentation default
+	ProfileHeavy Profile = "heavy" // ~40s — saturates workers
 )
 
-// orderWork is how long a whole order takes under this profile, spread across
-// however many steps its version has.
 func (p Profile) orderWork() time.Duration {
 	switch p {
 	case ProfileFast:
@@ -51,7 +31,6 @@ func (p Profile) orderWork() time.Duration {
 	}
 }
 
-// ParseProfile validates a profile name, e.g. from the ORDER_PROFILE env var.
 func ParseProfile(s string) (Profile, bool) {
 	switch Profile(s) {
 	case ProfileFast, ProfileDemo, ProfileHeavy:
@@ -61,58 +40,72 @@ func ParseProfile(s string) (Profile, bool) {
 	}
 }
 
-// slowStepWork is how long a deliberately slowed step takes.
-//
-// An absolute duration rather than a multiple of the profile: it has to exceed
-// the Workflow's 30s execution budget for the step in *every* profile, so a
-// slowed step reliably times out and is reported as trouble. A multiplier
-// would trip under "heavy" and go unnoticed under "fast".
+// Absolute so it exceeds stepStartToClose in every profile.
 const slowStepWork = 45 * time.Second
 
-// ErrStepFailed is returned by an injected fault. Temporal retries it, so the
-// order stalls and goes red rather than failing outright.
 var ErrStepFailed = errors.New("step failed")
 
-// Activities implements the one Activity every order step goes through.
-//
-// There is deliberately only one: the interesting differences between versions
-// live in which steps they run and in what order, not in what a step does.
+// Activities holds worker-local settings (speed profile). Each method is a
+// real Activity type registered on the worker.
 type Activities struct {
 	Profile Profile
 }
 
-// PerformStep does the work for one step of one order.
-func (a *Activities) PerformStep(ctx context.Context, in StepInput) (string, error) {
+func (a *Activities) ReceiveOrder(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) ScreenForFraud(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) ChargePayment(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) AccrueLoyalty(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) PrepareOrder(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) DispatchMobilePickup(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) HandOffAtDriveThru(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) HandOffToCustomer(ctx context.Context, in StepInput) error {
+	return a.perform(ctx, in)
+}
+
+func (a *Activities) perform(ctx context.Context, in StepInput) error {
 	logger := activity.GetLogger(ctx)
 	attempt := activity.GetInfo(ctx).Attempt
 
 	if in.Fail {
 		logger.Warn("step failing (injected fault)",
 			"orderId", in.OrderID, "version", in.Version, "step", in.Step, "attempt", attempt)
-		return "", fmt.Errorf("%s for order %s: %w", in.Step, in.OrderID, ErrStepFailed)
+		return fmt.Errorf("%s for order %s: %w", in.Step, in.OrderID, ErrStepFailed)
 	}
 
 	work := a.stepDuration(in.Version, in.Slow)
 	logger.Info("step started",
 		"orderId", in.OrderID, "version", in.Version, "step", in.Step, "work", work)
 
-	// Sleeping here — rather than in the Workflow — is the point: it holds a
-	// worker slot for the duration, which is what makes backlog and scale-out
-	// visible. A Workflow timer would release the worker immediately.
+	// Sleep here (not a Workflow timer) so a worker slot stays busy.
 	select {
 	case <-time.After(work):
-		return fmt.Sprintf("%s complete for order %s", in.Step, in.OrderID), nil
+		return nil
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return ctx.Err()
 	}
 }
 
-// stepDuration is this step's share of the order's budget, with up to 40%
-// jitter so orders do not advance in lockstep and the dashboard looks alive.
-//
-// The share is derived from the version's own pipeline length, which the
-// Activity knows from its input — so a four-step order and a seven-step order
-// both finish in about the same time.
 func (a *Activities) stepDuration(version Version, slow bool) time.Duration {
 	if slow {
 		return slowStepWork
@@ -125,4 +118,22 @@ func (a *Activities) stepDuration(version Version, slow bool) time.Duration {
 
 	share := a.Profile.orderWork() / time.Duration(steps)
 	return time.Duration(float64(share) * (0.8 + 0.4*rand.Float64()))
+}
+
+// activitiesFor returns the Activity methods this version's worker registers.
+func activitiesFor(a *Activities, v Version) []any {
+	switch v {
+	case V1:
+		return []any{a.ReceiveOrder, a.ChargePayment, a.PrepareOrder, a.HandOffToCustomer}
+	case V2:
+		return []any{a.ReceiveOrder, a.ChargePayment, a.AccrueLoyalty, a.PrepareOrder, a.HandOffToCustomer}
+	case V3:
+		return []any{a.ReceiveOrder, a.ScreenForFraud, a.ChargePayment, a.AccrueLoyalty, a.PrepareOrder, a.HandOffToCustomer}
+	case V4:
+		return []any{a.ReceiveOrder, a.ScreenForFraud, a.ChargePayment, a.AccrueLoyalty, a.PrepareOrder, a.DispatchMobilePickup, a.HandOffToCustomer}
+	case V5:
+		return []any{a.ReceiveOrder, a.ChargePayment, a.AccrueLoyalty, a.PrepareOrder, a.HandOffAtDriveThru}
+	default:
+		return nil
+	}
 }

@@ -168,19 +168,11 @@ func (s *Server) handleTrafficChaos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clearing the fault has to reach the orders already carrying it.
-	//
-	// The spec travels with each order, so stopping the injector only spares
-	// orders not yet started — the ones already parked on a broken step would
-	// stay parked forever. Releasing them is a separate, deliberate act.
+	// Clearing the injector only stops *new* orders from carrying the fault.
+	// Orders already retrying stay stuck until Rescue resets them onto a
+	// healthy version — the fault is baked into their input.
 	if req.Pct == 0 {
-		if job, err := s.releaseStuckOrders(r.Context()); err != nil {
-			// The injector *was* cleared, so this is a partial success and
-			// must not read as a failure to turn the fault off.
-			s.logger.Warn("fault cleared, but stuck orders could not be released", "err", err)
-		} else {
-			s.logger.Info("releasing stuck orders", "jobId", job)
-		}
+		s.logger.Info("fault injector cleared; rescue stuck orders from the version card if needed")
 	}
 
 	writeJSON(w, http.StatusOK, state)

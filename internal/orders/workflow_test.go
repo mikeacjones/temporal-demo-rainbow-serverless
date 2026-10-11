@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
@@ -12,34 +11,35 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// newEnv builds a test environment running one version's pipeline.
+func orderFn(v Version) any {
+	order, _ := bundleFor(v)
+	return order
+}
+
+func gateFn(v Version) any {
+	_, gate := bundleFor(v)
+	return gate
+}
+
 func newEnv(t *testing.T, v Version, gate bool) *testsuite.TestWorkflowEnvironment {
 	t.Helper()
 
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 
-	// One registration per step, mirroring what a real worker does: only the
-	// Activity types this version's pipeline actually uses.
 	acts := &Activities{Profile: ProfileFast}
-	for _, step := range StepsFor(v) {
-		env.RegisterActivityWithOptions(acts.PerformStep,
-			activity.RegisterOptions{Name: step.ActivityName()})
+	for _, fn := range activitiesFor(acts, v) {
+		env.RegisterActivity(fn)
 	}
 
-	run := Order
+	fn := orderFn(v)
 	if gate {
-		run = Gate
+		fn = gateFn(v)
 	}
-	env.RegisterWorkflowWithOptions(
-		func(ctx workflow.Context, in OrderInput) (OrderResult, error) { return run(ctx, v, in) },
-		workflow.RegisterOptions{Name: WorkflowTypeName},
-	)
+	env.RegisterWorkflowWithOptions(fn, workflow.RegisterOptions{Name: WorkflowTypeName})
 	return env
 }
 
-// Every version must run its own pipeline end to end. This is the guarantee
-// worker versioning exists to provide: an order runs the shape it started on.
 func TestOrderRunsItsVersionsPipeline(t *testing.T) {
 	for _, v := range AllVersions {
 		t.Run(string(v), func(t *testing.T) {
@@ -74,11 +74,10 @@ func TestOrderRunsItsVersionsPipeline(t *testing.T) {
 	}
 }
 
-// A fault aimed at another version must not disturb this one.
 func TestOrderIgnoresChaosAimedElsewhere(t *testing.T) {
 	env := newEnv(t, V2, false)
 	env.ExecuteWorkflow(WorkflowTypeName, NewOrderInput(1, &ChaosSpec{
-		TargetVersion: V5, // not us
+		TargetVersion: V5,
 		Step:          StepPayment,
 		Mode:          ChaosFail,
 	}))
@@ -88,11 +87,7 @@ func TestOrderIgnoresChaosAimedElsewhere(t *testing.T) {
 	}
 }
 
-// A fault aimed at a step this version does not have is also harmless — worth
-// pinning down, because it is how an operator's stale chaos setting behaves
-// after a rollout changes the pipeline shape.
 func TestOrderIgnoresChaosOnAStepItDoesNotHave(t *testing.T) {
-	// v1 has no Loyalty accrual step.
 	env := newEnv(t, V1, false)
 	env.ExecuteWorkflow(WorkflowTypeName, NewOrderInput(1, &ChaosSpec{
 		TargetVersion: V1,
@@ -105,9 +100,6 @@ func TestOrderIgnoresChaosOnAStepItDoesNotHave(t *testing.T) {
 	}
 }
 
-// The gate must fail fast on a poisoned version rather than retrying forever.
-// If this regressed, a bad candidate would hang its rollout instead of
-// blocking it.
 func TestGateFailsOnPoisonedVersion(t *testing.T) {
 	env := newEnv(t, V4, true)
 	env.ExecuteWorkflow(WorkflowTypeName, NewOrderInput(1, &ChaosSpec{
@@ -124,7 +116,6 @@ func TestGateFailsOnPoisonedVersion(t *testing.T) {
 	}
 }
 
-// A healthy candidate's gate must pass, or no rollout would ever start.
 func TestGatePassesOnHealthyVersion(t *testing.T) {
 	env := newEnv(t, V4, true)
 	env.ExecuteWorkflow(WorkflowTypeName, NewOrderInput(1, nil))
@@ -134,8 +125,6 @@ func TestGatePassesOnHealthyVersion(t *testing.T) {
 	}
 }
 
-// Each step must run as its own Activity type, so a version's pipeline is
-// legible in Event History rather than appearing as N identical entries.
 func TestEachStepRunsAsItsOwnActivityType(t *testing.T) {
 	var mu sync.Mutex
 	seen := map[string]int{}
@@ -164,14 +153,11 @@ func TestEachStepRunsAsItsOwnActivityType(t *testing.T) {
 			t.Errorf("Activity %q ran %d times, want 1", step.ActivityName(), seen[step.ActivityName()])
 		}
 	}
-	// The generic name is the thing being replaced; it must not appear.
 	if seen["PerformStep"] != 0 {
-		t.Error("PerformStep should no longer be used as an Activity type")
+		t.Error("shared PerformStep Activity type should not appear")
 	}
 }
 
-// Versions must register genuinely different Activity types, or a rollout
-// between them is invisible in the Temporal UI.
 func TestVersionsRunDifferentActivityTypes(t *testing.T) {
 	names := func(v Version) map[string]bool {
 		out := map[string]bool{}
@@ -192,8 +178,6 @@ func TestVersionsRunDifferentActivityTypes(t *testing.T) {
 		t.Error("the drive-thru handoff should be unique to v5")
 	}
 
-	// Distinct steps must never collide onto one Activity name, or two
-	// different pieces of work would be indistinguishable in history.
 	all := map[string]Step{}
 	for _, v := range AllVersions {
 		for _, s := range StepsFor(v) {
@@ -205,17 +189,7 @@ func TestVersionsRunDifferentActivityTypes(t *testing.T) {
 	}
 }
 
-// The headline recovery path: an order stuck on an injected fault must come
-// back to life when the fault is cleared, without being reset or restarted.
-//
-// Before this existed the fault was resolved once per step and then retried
-// forever with the same poisoned input, so a stuck order was unrecoverable no
-// matter what an operator did.
-//
-// This also pins the retry behaviour either side of the release: the step must
-// go on retrying well past its bounded probe attempts (otherwise the order
-// gave up rather than parked), and must then finish the whole pipeline.
-func TestClearingTheFaultReleasesAStuckOrder(t *testing.T) {
+func TestFaultedOrderKeepsRetrying(t *testing.T) {
 	var mu sync.Mutex
 	attempts := 0
 
@@ -228,48 +202,26 @@ func TestClearingTheFaultReleasesAStuckOrder(t *testing.T) {
 		}
 	})
 
-	// Long enough that the probe budget is spent and the order is parked on
-	// its durable retry, then clear the fault the way the dashboard does.
-	// Not much longer: the time-skipping environment races an unbounded retry
-	// forward, and eventually abandons the run rather than skipping forever.
-	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow(SignalClearFault, nil)
-	}, 2*time.Minute)
-
 	env.ExecuteWorkflow(WorkflowTypeName, NewOrderInput(1, &ChaosSpec{
 		TargetVersion: V2,
 		Step:          StepPayment,
 		Mode:          ChaosFail,
 	}))
 
-	if !env.IsWorkflowCompleted() {
-		t.Fatal("a released order should finish, not stay parked")
-	}
-	if err := env.GetWorkflowError(); err != nil {
-		t.Fatalf("a released order should complete cleanly, got: %v", err)
-	}
-
-	var result OrderResult
-	if err := env.GetWorkflowResult(&result); err != nil {
-		t.Fatalf("decode result: %v", err)
-	}
-	// It must finish the *whole* pipeline, not just escape the broken step.
-	if len(result.Steps) != len(StepsFor(V2)) {
-		t.Errorf("ran %d steps, want the full %d", len(result.Steps), len(StepsFor(V2)))
+	if env.IsWorkflowCompleted() {
+		if err := env.GetWorkflowError(); err == nil {
+			t.Fatal("a faulted order should not complete successfully")
+		}
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	// Strictly more than the probe budget, or the order gave up instead of
-	// parking on a durable retry.
-	if attempts <= probeAttempts {
-		t.Errorf("payment ran %d times, want more than the %d probe attempts — "+
-			"a stuck order should keep retrying, not give up", attempts, probeAttempts)
+	if attempts <= gateAttempts {
+		t.Errorf("payment ran %d times, want more than the gate's %d attempts — "+
+			"a real order should keep retrying until Rescue", attempts, gateAttempts)
 	}
 }
 
-// A fault that is never cleared must leave the order retrying rather than
-// failing it: the customer's order is owed, not lost.
 func TestAnUnclearedFaultNeverFailsTheOrder(t *testing.T) {
 	env := newEnv(t, V2, false)
 
@@ -279,11 +231,8 @@ func TestAnUnclearedFaultNeverFailsTheOrder(t *testing.T) {
 		Mode:          ChaosFail,
 	}))
 
-	// The time-skipping environment races an unbounded retry forward until it
-	// gives up, so the assertion is about *how* it ended: whatever happened,
-	// the order must never have completed successfully behind a live fault.
 	if !env.IsWorkflowCompleted() {
-		return // still parked, which is the intended state
+		return // still retrying — intended
 	}
 	if err := env.GetWorkflowError(); err == nil {
 		t.Fatal("an order should not complete successfully while its fault is live")

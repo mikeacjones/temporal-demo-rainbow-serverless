@@ -317,8 +317,8 @@ demo material.
 
 ## Dashboard
 
-Built on the versioning demo's Go backend: server-rendered HTMX
-fragments pushed over SSE.
+JSON + SSE API in `internal/api`, static frontend in `frontend/`
+(nginx serves HTML/CSS/JS and proxies `/api`). No server-rendered HTML.
 
 **Read path had to change for scale.** The versioning demo
 `getState`-Queries every open Workflow, which dies at 1,000
@@ -383,19 +383,19 @@ before it finishes, and it appears to vanish halfway through.
 ## Repo layout
 
 ```
-cmd/backend/         dashboard + API + SSE
+cmd/backend/         JSON + SSE API entrypoint
 cmd/worker/          versioned order worker (ORDER_VERSION selects the shape)
 cmd/controlworker/   unversioned control-plane worker (rollout + traffic)
 cmd/lambdaworker/    Lambda entrypoint around the versioned worker
-internal/orders/     the five Workflow shapes, activities, chaos, types
+internal/orders/     order Workflow, pipelines, activities, chaos (start here)
 internal/rollout/    RolloutWorkflow, GateProbe child Workflow, activities
 internal/traffic/    TrafficDirectorWorkflow, StartOrderBatch
 internal/deploy/     Worker Deployment API wrapper, label resolver, StartPinned
-internal/dashboard/  state model, poller, SSE hub, render, actions, server
+internal/api/        snapshot poller, SSE hub, HTTP handlers
 internal/config/     env + Temporal client options (local / Cloud API key)
-frontend/            embedded SPA
-deploy/local/        run N versioned workers locally
+frontend/            static dashboard (HTML/CSS/JS, no build step)
 deploy/aws/          Lambda build + per-version alias wiring, CFN roles
+deploy/k8s/          Kubernetes manifests
 ```
 
 ---

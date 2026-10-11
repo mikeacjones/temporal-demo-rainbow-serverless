@@ -55,28 +55,6 @@ func TestStoppedRolloutReportsNothing(t *testing.T) {
 	}
 }
 
-// The fault repair must fire exactly when an order is parked on a fault that
-// no longer exists — and stay quiet otherwise, because it batch-signals every
-// running order.
-func TestFaultRepairFiresOnlyWhenNeeded(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		chaosPct float64
-		degraded int64
-		want     bool
-	}{
-		{"parked with no fault configured", 0, 46, true},
-		{"nothing parked", 0, 0, false},
-		{"fault still aimed, so parking is expected", 100, 46, false},
-		{"fault aimed and nothing parked yet", 100, 0, false},
-	} {
-		got := needsFaultRepair(tc.chaosPct, tc.degraded)
-		if got != tc.want {
-			t.Errorf("%s: repair = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
 // The sparklines must cover long enough to show a spike's tail.
 //
 // History used to be sampled once per poll, so at a 1s poll the graphs held

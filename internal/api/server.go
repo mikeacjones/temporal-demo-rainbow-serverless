@@ -67,11 +67,9 @@ type Server struct {
 	rollouts *rolloutController
 	bursts   *traffic.Burst
 
-	// lastReconcile throttles the fault repair, and lastHistory paces the
-	// sparkline samples. Touched only by the poll goroutine, so neither needs
-	// a lock.
-	lastReconcile time.Time
-	lastHistory   time.Time
+	// lastHistory paces the sparkline samples. Touched only by the poll
+	// goroutine, so it needs no lock.
+	lastHistory time.Time
 
 	// sinceMu guards the counter baseline, which an HTTP handler sets while
 	// the poll goroutine reads it.

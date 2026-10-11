@@ -1,9 +1,5 @@
-// Command controlworker runs the demo's control plane: the rollout coordinator
-// and the traffic generator.
-//
-// It is deliberately NOT part of the versioned Worker Deployment. A Workflow
-// that changes which version takes traffic cannot itself be pinned to one of
-// those versions, or a rollout could strand its own coordinator.
+// Command controlworker runs the unversioned control plane (rollout + traffic).
+// It must not join the versioned deployment it manages.
 package main
 
 import (
@@ -52,8 +48,6 @@ func run(logger *slog.Logger) error {
 	reader := metrics.NewReader(c, cfg.Namespace, cfg.DeploymentName)
 
 	w := worker.New(c, rollout.TaskQueue, worker.Options{
-		// The traffic generator's batch Activities are I/O bound, so allow
-		// plenty of them: this is where a spike's sharpness comes from.
 		MaxConcurrentActivityExecutionSize: config.EnvInt("CONTROL_MAX_CONCURRENT_ACTIVITIES", 100),
 	})
 

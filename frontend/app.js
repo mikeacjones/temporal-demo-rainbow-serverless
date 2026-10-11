@@ -1312,7 +1312,7 @@ $('fault-apply').addEventListener('click', () => {
 });
 
 $('fault-clear').addEventListener('click', () => {
-  act('/api/traffic/chaos', { pct: 0 }, () => 'Fault cleared');
+  act('/api/traffic/chaos', { pct: 0 }, () => 'Fault cleared — Rescue stuck orders from the version card');
 });
 
 // Draw once from the cached snapshot so the page is never blank, then stream.
