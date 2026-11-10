@@ -1,0 +1,180 @@
+id: rainbow-deploys
+title: How Temporal employees present Rainbow deploys
+baseUrl: ${DEMO_BASE_URL}
+viewport:
+  width: 1440
+  height: 900
+setup:
+  readyText: Rainbow deploys
+  request:
+    method: POST
+    path: /api/traffic/rate
+    body:
+      ratePerMin: 0
+steps:
+  - id: deploy-scene
+    feature: Deploy scene
+    say: >-
+      Deploy is the rollout story. New orders go to shows where the next order
+      will start. Orders still running shows the versions that already own
+      work. The live mark is this dashboard's connection to the API.
+    holdMs: 2000
+    actions:
+      - type: waitForText
+        text: Rainbow deploys
+      - type: waitForText
+        text: New orders go to
+      - type: waitForText
+        text: Orders still running
+
+  - id: shared
+    feature: Shared environment
+    say: >-
+      Shared live environment means this hosted demo is communal. Everyone
+      signed in sees the same traffic and the same rollout.
+    holdMs: 2000
+    actions:
+      - type: waitForText
+        text: Shared live environment
+
+  - id: versions
+    feature: Registered versions
+    say: >-
+      v1 through v5 are already registered, and v1 is taking orders now.
+      Start deployment changes who receives new orders. Send to a version
+      starts orders there without moving the ramp. Neither one swaps an image.
+    holdMs: 2000
+    actions:
+      - type: scrollTo
+        text: Start deployment
+
+  - id: start-rollout
+    feature: Start a deployment
+    say: >-
+      Start deployment on v2 opens a canary first. Those probe orders are
+      pinned to v2, so a bad build fails here instead of on the current share.
+    holdMs: 2500
+    actions:
+      - type: clickIn
+        text: v2
+        role: button
+        name: Start deployment
+      - type: waitForText
+        text: checking the new version
+        timeoutMs: 30000
+
+  - id: advance
+    feature: Advance the ramp
+    say: >-
+      The canary passed, so Next stage moves the share of new orders.
+      Hold pauses that share. Set share jumps to a number you type.
+      Abort sends new orders back. Orders already running stay pinned.
+    holdMs: 2500
+    actions:
+      - type: waitForText
+        text: canary orders passed
+        timeoutMs: 120000
+      - type: click
+        role: button
+        name: Next stage
+
+  - id: abort
+    feature: Abort the deployment
+    say: >-
+      Abort to v1 sends new orders back to v1. The canary orders already
+      started on v2 stay there until they finish.
+    holdMs: 2000
+    actions:
+      - type: scrollTo
+        text: Abort to
+      - type: click
+        role: button
+        name: /Abort to/
+      - type: waitForText
+        text: rolled back
+        timeoutMs: 45000
+
+  - id: scale-scene
+    feature: Scale scene
+    say: >-
+      Scale, also the 2 key, is the queue story. These controls set demand.
+      They do not resize a worker fleet by hand.
+    holdMs: 2000
+    actions:
+      - type: click
+        role: button
+        name: /Scale/
+      - type: waitForText
+        text: Send the surge
+
+  - id: rate
+    feature: Steady rate
+    say: >-
+      120 starts a steady flow of orders per minute. The faster chips are the
+      same control. Stop returns the rate to zero, which is what lets an idle
+      Cloud deployment scale its workers to zero.
+    holdMs: 2000
+    actions:
+      - type: click
+        role: button
+        name: "120"
+      - type: waitForText
+        text: Orders per minute
+
+  - id: burst
+    feature: Burst
+    say: >-
+      +500 adds a one-shot burst on top of that rate. Watch Queued and the
+      backlog: that pile is what brings workers to the queue.
+    holdMs: 2500
+    actions:
+      - type: click
+        role: button
+        name: "+500"
+      - type: pause
+        ms: 2000
+
+  - id: capacity
+    feature: Capacity readouts
+    say: >-
+      Workers running, Queued, and Backlog are the capacity response.
+      Locally each version is a process that is already up. On Temporal Cloud
+      those same workers are Lambda functions Temporal invokes for the backlog.
+    holdMs: 2500
+    actions:
+      - type: scrollTo
+        text: Capacity response
+
+  - id: backstage
+    feature: Failure injection
+    say: >-
+      Open backstage when you want a rollout to fail. Pick the version, the
+      step, and Fail and retry or Run very slowly, then Trigger failure.
+      This take leaves it disarmed. Clear failure stops new orders from
+      carrying a fault. Rescue appears on a version card only when orders
+      are stuck, and the filters under Individual orders narrow that list.
+    holdMs: 3000
+    actions:
+      - type: scrollTo
+        text: Open backstage
+      - type: clickText
+        text: Open backstage
+      - type: waitForText
+        text: Inject a failure
+
+  - id: stop
+    feature: Return to idle
+    say: >-
+      Stop ends the steady flow. Once those orders finish and nobody is
+      watching, Cloud workers drain and are not replaced.
+    holdMs: 2000
+    actions:
+      - type: click
+        role: button
+        name: /Scale/
+      - type: click
+        role: button
+        name: Stop
+      - type: waitForText
+        text: Stopped taking new orders
+        timeoutMs: 20000
